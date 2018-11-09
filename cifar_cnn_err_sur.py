@@ -14,6 +14,9 @@ from keras.layers import Conv1D, GlobalMaxPooling1D
 from keras.datasets import imdb
 import numpy as np
 from keras.callbacks import LambdaCallback
+from keras import backend as K
+from sklearn.utils import resample
+
 
 # set parameters:
 max_features = 5000
@@ -23,7 +26,7 @@ embedding_dims = 50
 filters = 250
 kernel_size = 3
 hidden_dims = 250
-epochs = 20
+epochs = 26
 
 
 import pickle
@@ -33,28 +36,44 @@ import pickle
 
 num_callback = 6
 l = np.array([])
+m_grad = np.array([])
 temp_a = np.array([])
 
 weights_log = np.array([])
 
-weight_hist_length = 25
+weight_hist_length = 26
+
+
 
 
 def weight_prediciton():
     global l
+    global m_grad
+    temp_w = model.get_weights()
+
+    grads = model.optimizer.get_gradients(model.total_loss, model.trainable_weights)
+    symb_inputs = (model._feed_inputs + model._feed_targets + model._feed_sample_weights)
+    f = K.function(symb_inputs, grads)
+    x, y, sample_weight = model._standardize_user_data(x_train_re, y_train_re)
+    temp_gradients = f(x + y + sample_weight)
+
     if l.shape[0] == 0:
-        l = np.append(l, model.get_weights())
+        l = np.append(l, temp_w[1:7])
+        m_grad = np.append(m_grad, temp_gradients[1:7])
     else:
-        l = np.vstack([l, model.get_weights()])
+        l = np.vstack([l, temp_w[1:7]])
+        m_grad = np.vstack([m_grad, temp_gradients[1:7]])
 
 print('Loading data...')
 (x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=max_features)
+
 print(len(x_train), 'train sequences')
 print(len(x_test), 'test sequences')
 
 print('Pad sequences (samples x time)')
 x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
 x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+x_train_re,y_train_re=resample(x_train,y_train, n_samples=2500, random_state=1)
 print('x_train shape:', x_train.shape)
 print('x_test shape:', x_test.shape)
 
@@ -89,8 +108,8 @@ model.add(Activation('sigmoid'))
 
 update_weights = LambdaCallback(on_epoch_end=lambda batch, logs: weight_prediciton())
 
-model.compile(loss='mean_squared_error',
-              optimizer='sgd',
+model.compile(loss='binary_crossentropy',
+              optimizer='adam',
               metrics=['accuracy'])
 model.fit(x_train, y_train,
           batch_size=batch_size,
